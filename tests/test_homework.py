@@ -1,30 +1,47 @@
-import os
-import subprocess
-import warnings
+"""Prediccion script for the MLflow model.
 
-warnings.filterwarnings("ignore")
+This script loads a model from MLflow and makes predictions on a dataset.
 
+$ python3 make_predictions.py
 
-def test_01():
+"""
 
-    # Test if the homework script runs without errors
-    try:
-        for model in ["elasticnet", "knn"]:
-            subprocess.run(
-                ["python3", "-m", "homework", "--model", model],
-                check=True,
-            )
-    except subprocess.CalledProcessError as e:
-        raise Exception(f"Error running the homework script: {e}")
+import mlflow
+import pandas as pd
 
-    # Ensure the mlruns directory exists
-    assert os.path.exists("mlruns"), "mlruns directory does not exist."
+FILE_PATH = "data/winequality-red.csv"
+EXPERIMENT_NAME = "wine_quality_experiment"
 
-    # Check if there are any experiments saved in mlruns/
-    experiments = [
-        d for d in os.listdir("mlruns") if os.path.isdir(os.path.join("mlruns", d))
-    ]
-    assert len(experiments) > 0, "No experiments found in mlruns directory."
+df = pd.read_csv(FILE_PATH)
+y = df["quality"]
+x = df.drop(columns=["quality"])
 
-    # Check if the required file exists
-    assert os.path.exists("make_predictions.py")
+## En lugar de fijar el run_id a mano, se busca automaticamente el
+## ultimo run registrado en el experimento. Asi el script funciona en
+## cualquier maquina sin tener que editar el run_id.
+experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+if experiment is None:
+    raise RuntimeError(
+        f"No existe el experimento '{EXPERIMENT_NAME}'. "
+        "Entrene primero un modelo, por ejemplo: "
+        "python3 -m homework --model knn"
+    )
+
+runs = mlflow.search_runs(
+    experiment_ids=[experiment.experiment_id],
+    order_by=["start_time DESC"],
+    max_results=1,
+)
+if runs.empty:
+    raise RuntimeError(
+        "No hay runs registrados en el experimento. "
+        "Ejecute primero: python3 -m homework --model knn"
+    )
+
+run_id = runs.iloc[0]["run_id"]
+logged_model = f"runs:/{run_id}/model"
+
+loaded_model = mlflow.pyfunc.load_model(logged_model)
+y_pred = loaded_model.predict(x)
+
+print(y_pred)
